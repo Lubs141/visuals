@@ -2404,6 +2404,11 @@
       <option value="fh">First Half</option>
     </select>
   </span>
+  <!-- Max score option count selector — controls how many number options (0..N) appear in the goal dropdowns -->
+  <span style="display:flex;align-items:center;gap:6px;">
+    <span style="font-size:12px;font-weight:600;color:var(--text-label);">Max Score Option:</span>
+    <input type="number" id="maxScoreOption" min="0" max="99" value="5" style="width:56px;font-size:12px;padding:4px 6px;border-radius:4px;border:1px solid var(--border-input);background:var(--select-bg);color:var(--text-primary);" onchange="updateScoreDropdownOptions()" onkeydown="if(event.key==='Enter'){ event.preventDefault(); this.blur(); }">
+  </span>
 </div>
 
 <div class="input-tabs">
@@ -3635,6 +3640,55 @@ Example:
                 document.getElementById('tableWrapper').innerHTML='<div class="table-container" id="tableContainer"><div class="empty-state">Enter match results above to generate pivot table</div></div>';
             }
         }
+
+        // ── Max score option count — regenerates the number options (0..N) in the
+        //    home/away goal dropdowns (both Final and First-Half fields) ─────────
+        function updateScoreDropdownOptions(){
+            const input = document.getElementById('maxScoreOption');
+            let max = parseInt(input.value, 10);
+            if(isNaN(max) || max < 0) max = 0;
+            if(max > 99) max = 99;
+            input.value = max;
+
+            const selectConfigs = [
+                { id: 'homeGoals',   specialValue: 'H', specialLabel: 'H' },
+                { id: 'awayGoals',   specialValue: 'A', specialLabel: 'A' },
+                { id: 'fhHomeGoals', specialValue: 'H', specialLabel: 'H' },
+                { id: 'fhAwayGoals', specialValue: 'A', specialLabel: 'A' }
+            ];
+
+            selectConfigs.forEach(cfg => {
+                const sel = document.getElementById(cfg.id);
+                if(!sel) return;
+                const prevValue = sel.value;
+                sel.innerHTML = '';
+                const specialOpt = document.createElement('option');
+                specialOpt.value = cfg.specialValue;
+                specialOpt.textContent = cfg.specialLabel;
+                sel.appendChild(specialOpt);
+                for(let n = 0; n <= max; n++){
+                    const opt = document.createElement('option');
+                    opt.textContent = n;
+                    sel.appendChild(opt);
+                }
+                // Restore previous selection if it's still a valid option, else fall back to special value
+                const stillValid = Array.from(sel.options).some(o => o.value === prevValue);
+                sel.value = stillValid ? prevValue : cfg.specialValue;
+            });
+
+            try { localStorage.setItem('mv_max_score_option', String(max)); } catch(e){}
+        }
+        // Restore saved max score option on load
+        (function(){
+            try {
+                const saved = localStorage.getItem('mv_max_score_option');
+                if(saved !== null){
+                    const input = document.getElementById('maxScoreOption');
+                    if(input) input.value = saved;
+                }
+            } catch(e){}
+            updateScoreDropdownOptions();
+        })();
 
         function onActiveViewChange(){
             activeView = document.getElementById('activeViewSelect').value;
