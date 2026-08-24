@@ -2493,6 +2493,19 @@ Example:
         let _oddsSortOutcome = 'winner'; // which outcome type the model dropdown is sorted by
         let _patSubTab = 'patterns';
         let showCrosshair = false;
+        let slotPatternSortDir = 'default'; // 'default' | 'desc' | 'asc' — sort order for Slot Pattern row by percentage
+        try { const _spsd = localStorage.getItem('mv_slot_pattern_sort'); if(_spsd) slotPatternSortDir = _spsd; } catch(e){}
+        function cycleSlotPatternSort(){
+            slotPatternSortDir = slotPatternSortDir === 'default' ? 'desc' : (slotPatternSortDir === 'desc' ? 'asc' : 'default');
+            try { localStorage.setItem('mv_slot_pattern_sort', slotPatternSortDir); } catch(e){}
+            if(matches.length > 0) generatePivot();
+            if(typeof _sgSummaryVisible !== 'undefined' && _sgSummaryVisible && typeof renderSgSummary === 'function') renderSgSummary();
+        }
+        function slotSortBtnHtml(){
+            const label = slotPatternSortDir === 'desc' ? '▼ High→Low' : (slotPatternSortDir === 'asc' ? '▲ Low→High' : '↕ Sort');
+            const title = slotPatternSortDir === 'desc' ? 'Sorted by % descending — click for ascending' : (slotPatternSortDir === 'asc' ? 'Sorted by % ascending — click to reset' : 'Click to sort slots by percentage');
+            return `<button onclick="cycleSlotPatternSort()" title="${title}" style="font-size:9px;padding:1px 5px;margin-left:4px;border-radius:3px;border:1px solid #666;background:#333;color:#ddd;cursor:pointer;vertical-align:middle;">${label}</button>`;
+        }
         // Controls whether the "storage full" / "history trimmed" popup notifications
         // are actually displayed. The underlying save + auto-trim logic in saveData()
         // always runs regardless of this setting — this only mutes the visible alert.
@@ -6580,20 +6593,32 @@ Example:
                 });
                 const ordinal = n => n===1?'1st':n===2?'2nd':n===3?'3rd':`${n}th`;
                 if(shouldShow('slotPattern')){
-                html+=`<tr style="class="sum-row-purple" style="font-size:11px;""><td><em title="Per-slot outcome frequency: how often each outcome was the 1st, 2nd or 3rd match result within a row. Bold = dominant at that slot. Guides which outcome to expect at each position in an incoming row.">Slot Pattern</em></td>`;
+                // Global peak: the single highest count across ALL outcome/slot combinations
+                const globalMaxCnt = slotRowCount > 0 ? Math.max(...colNames.flatMap(c => slotCountsArr.map(so => so[c]||0))) : 0;
+                html+=`<tr style="class="sum-row-purple" style="font-size:11px;""><td><em title="Per-slot outcome frequency: how often each outcome was the 1st, 2nd or 3rd match result within a row. Bold = dominant at that slot. ★ = slot where this outcome peaks. 🏆 = single highest slot across all outcomes. Guides which outcome to expect at each position in an incoming row.">Slot Pattern</em>${slotSortBtnHtml()}</td>`;
                 colNames.forEach(c => {
                     if(slotRowCount === 0){ html+=`<td style="font-style:italic;color:#9e9e9e;font-size:10px;">—</td>`; return; }
-                    const parts = slotCountsArr.map((slotObj, slotIdx) => {
+                    // Find this outcome's peak slot (highest count for THIS outcome specifically)
+                    const maxForOutcome = Math.max(...slotCountsArr.map(so => so[c]||0));
+                    let partsData = slotCountsArr.map((slotObj, slotIdx) => {
                         const cnt = slotObj[c] || 0;
                         const pct = Math.round(cnt / slotRowCount * 100);
                         const maxAtSlot = Math.max(...colNames.map(x => slotObj[x]||0));
                         const isDominant = cnt === maxAtSlot && maxAtSlot > 0;
-                        const col = isDominant ? '#6a1b9a' : '#9e9e9e';
-                        const weight = isDominant ? 700 : 400;
-                        return `<span style="color:${col};font-weight:${weight};" title="${ordinal(slotIdx+1)} slot: ${cnt}/${slotRowCount} (${pct}%)">`+
-                               `${ordinal(slotIdx+1)}:<strong>${cnt}</strong>`+
-                               `<span style="font-size:9px;color:${isDominant?'#6a1b9a':'#bdbdbd'};">(${pct}%)</span></span>`;
+                        const isPeakForOutcome = cnt === maxForOutcome && maxForOutcome > 0;
+                        const isGlobalPeak = cnt === globalMaxCnt && globalMaxCnt > 0;
+                        const col = isGlobalPeak ? '#e53935' : (isPeakForOutcome ? '#f9a825' : (isDominant ? '#6a1b9a' : '#9e9e9e'));
+                        const weight = isDominant || isPeakForOutcome || isGlobalPeak ? 700 : 400;
+                        const badge = isGlobalPeak ? `<span style="color:#e53935;font-size:10px;" title="Highest slot across ALL outcomes">🏆</span>` : (isPeakForOutcome ? `<span style="color:#f9a825;font-size:10px;" title="Peak slot for ${c}">★</span>` : '');
+                        const tipExtra = isGlobalPeak ? ' 🏆 Highest slot across ALL outcomes' : (isPeakForOutcome ? ' ★ Peak slot for this outcome' : '');
+                        const str = `<span style="color:${col};font-weight:${weight};" title="${ordinal(slotIdx+1)} slot: ${cnt}/${slotRowCount} (${pct}%)${tipExtra}">`+
+                               `${badge}${ordinal(slotIdx+1)}:<strong>${cnt}</strong>`+
+                               `<span style="font-size:9px;color:${isGlobalPeak?'#e53935':(isPeakForOutcome?'#f9a825':(isDominant?'#6a1b9a':'#bdbdbd'))};">(${pct}%)</span></span>`;
+                        return { slotIdx, cnt, str };
                     });
+                    if(slotPatternSortDir === 'desc') partsData.sort((a,b)=> b.cnt - a.cnt || a.slotIdx - b.slotIdx);
+                    else if(slotPatternSortDir === 'asc') partsData.sort((a,b)=> a.cnt - b.cnt || a.slotIdx - b.slotIdx);
+                    const parts = partsData.map(p => p.str);
                     const tipAll = slotCountsArr.map((so,i)=>`${ordinal(i+1)}: ${so[i]||0}/${slotRowCount} (${Math.round((so[c]||0)/slotRowCount*100)}%)`).join(' | ');
                     html+=`<td style="font-style:italic;font-size:10px;white-space:nowrap;padding:3px 5px;line-height:1.8;" title="${tipAll}">${parts.join('<br>')}</td>`;
                 });
@@ -7186,7 +7211,7 @@ Example:
                 const modeDesc = isPosSegMode
                     ? `Position ${selectedPos} — each row = ${parseInt(document.getElementById((containerId==='compareRightPane')?'comparePosSegSizeRight':'posSegSize')?.value||'3')}-hour segment of this position's outcomes`
                     : 'Segment total rows show cumulative counts for each 6-hour period. "Prev Hours Avg" shows averages from completed hours only';
-                html+=`<div class="note-toggle-bar" onclick="toggleNotes()"><span class="note-toggle-icon">${notesVisible?'▲':'▼'}</span><span>📝 Table Notes</span></div><div class="note${notesVisible?'':' note-collapsed'}"><strong>Note:</strong> ${modeDesc}. Highest value in each row highlighted. <strong>${isPosSegMode?'Segs':'Hours'} Active</strong> = rows where outcome appeared ≥1 time. <strong>H2H Dom.</strong> = <span style="color:#1b5e20;font-weight:600;">[G]</span> leading, <span style="color:#607d8b;">[E]</span> tied, <span style="color:#b71c1c;">[L]</span> trailing. <strong>Rank Freq.</strong> = times ranked <span style="color:#b8860b;font-weight:700;">[1st]</span><span style="color:#607d8b;">[2nd]</span><span style="color:#a0522d;">[3rd]</span> by count per row. <strong>Slot Pattern</strong> = per-slot outcome frequency; <strong>bold purple</strong> = dominant at that slot. <strong>Slot Streak Flow</strong> = run-length history of consecutive appearances at each slot (oldest→newest). <strong>Leftmost</strong> colour = which outcome's streak started first: <span style="color:#f9a825;font-weight:700;">gold=1st</span>, <span style="color:#78909c;font-weight:700;">silver=2nd</span>, <span style="color:#a1887f;font-weight:700;">bronze=3rd</span>. <strong>Rightmost</strong> = current run (<span style="color:#1976d2;font-weight:700;">blue=1</span>, <span style="color:#e65100;font-weight:700;">orange=2</span>, <span style="color:#c62828;font-weight:700;">red≥3</span>). <strong>Slot Consec.</strong> = current streak per slot (orange ≥2, red ≥3); 0(N) = absent N rows. <strong>Slot Min/Max</strong> = ▲max / ▼min streak ever per slot. <strong>Slot Alt. Rate</strong> = how often dominant outcome flips at each slot (green=sticky, red=volatile). <strong>Slot Recovery</strong> = avg rows to recover after absence at each slot. <strong>Consec. ${isPosSegMode?'Segs':'Streak'}</strong> = unbroken run of complete rows (orange ≥2, red ≥3). Use the <strong>🗂 Rows</strong> button to toggle which rows are shown.</div>`;
+                html+=`<div class="note-toggle-bar" onclick="toggleNotes()"><span class="note-toggle-icon">${notesVisible?'▲':'▼'}</span><span>📝 Table Notes</span></div><div class="note${notesVisible?'':' note-collapsed'}"><strong>Note:</strong> ${modeDesc}. Highest value in each row highlighted. <strong>${isPosSegMode?'Segs':'Hours'} Active</strong> = rows where outcome appeared ≥1 time. <strong>H2H Dom.</strong> = <span style="color:#1b5e20;font-weight:600;">[G]</span> leading, <span style="color:#607d8b;">[E]</span> tied, <span style="color:#b71c1c;">[L]</span> trailing. <strong>Rank Freq.</strong> = times ranked <span style="color:#b8860b;font-weight:700;">[1st]</span><span style="color:#607d8b;">[2nd]</span><span style="color:#a0522d;">[3rd]</span> by count per row. <strong>Slot Pattern</strong> = per-slot outcome frequency; <strong>bold purple</strong> = dominant at that slot, <span style="color:#f9a825;font-weight:700;">★gold</span> = that outcome's peak (highest %) slot, <span style="color:#e53935;font-weight:700;">🏆red</span> = single highest slot across all outcomes. Use the <strong>↕ Sort</strong> button on that row to order slots by percentage (high→low, low→high, or reset). <strong>Slot Streak Flow</strong> = run-length history of consecutive appearances at each slot (oldest→newest). <strong>Leftmost</strong> colour = which outcome's streak started first: <span style="color:#f9a825;font-weight:700;">gold=1st</span>, <span style="color:#78909c;font-weight:700;">silver=2nd</span>, <span style="color:#a1887f;font-weight:700;">bronze=3rd</span>. <strong>Rightmost</strong> = current run (<span style="color:#1976d2;font-weight:700;">blue=1</span>, <span style="color:#e65100;font-weight:700;">orange=2</span>, <span style="color:#c62828;font-weight:700;">red≥3</span>). <strong>Slot Consec.</strong> = current streak per slot (orange ≥2, red ≥3); 0(N) = absent N rows. <strong>Slot Min/Max</strong> = ▲max / ▼min streak ever per slot. <strong>Slot Alt. Rate</strong> = how often dominant outcome flips at each slot (green=sticky, red=volatile). <strong>Slot Recovery</strong> = avg rows to recover after absence at each slot. <strong>Consec. ${isPosSegMode?'Segs':'Streak'}</strong> = unbroken run of complete rows (orange ≥2, red ≥3). Use the <strong>🗂 Rows</strong> button to toggle which rows are shown.</div>`;
             } else {
                 html+=`<div class="note-toggle-bar" onclick="toggleNotes()"><span class="note-toggle-icon">${notesVisible?'▲':'▼'}</span><span>📝 Table Notes</span></div><div class="note${notesVisible?'':' note-collapsed'}">Highest value in each row is highlighted in yellow.</div>`;
             }
@@ -8136,7 +8161,9 @@ Example:
 
             if(slotRowCount > 0){
                 const ordSg = n => n===1?'1st':n===2?'2nd':n===3?'3rd':`${n}th`;
-                html += `<tr class="sum-row-indigo" style="font-size:11px;"><td><em title="Per-slot score frequency across all complete hours. Bold = dominant at that slot. ★ = slot where this score is most frequent.">Slot Pattern</em></td>`;
+                const validSlotIdxs = Array.from({length:N},(_,i)=>i).filter(si=>!(rangeVal==='first'&&si>=half)&&!(rangeVal==='second'&&si<half));
+                const globalMaxCnt = Math.max(...LISTED.flatMap(sc => validSlotIdxs.map(si => slotCounts[si].get(sc)||0)));
+                html += `<tr class="sum-row-indigo" style="font-size:11px;"><td><em title="Per-slot score frequency across all complete hours. Bold = dominant at that slot. ★ = slot where this score is most frequent. 🏆 = single highest slot across all scores.">Slot Pattern</em>${slotSortBtnHtml()}</td>`;
                 LISTED.forEach(sc => {
                     // Find which slot has the highest count for THIS score
                     let maxForScore = 0;
@@ -8147,19 +8174,25 @@ Example:
                         if(cnt > maxForScore) maxForScore = cnt;
                     }
 
-                    const parts = Array.from({length: N}, (_,si) => {
+                    let partsData = Array.from({length: N}, (_,si) => {
                         if(rangeVal === 'first'  && si >= half) return null;
                         if(rangeVal === 'second' && si < half)  return null;
                         const cnt = slotCounts[si].get(sc)||0;
                         const maxAtSlot = Math.max(...LISTED.map(x => slotCounts[si].get(x)||0));
                         const isDomAtSlot  = cnt === maxAtSlot && maxAtSlot > 0;   // dominant vs other scores at this slot
                         const isDomForScore = cnt === maxForScore && maxForScore > 0; // dominant slot for this score
+                        const isGlobalPeak = cnt === globalMaxCnt && globalMaxCnt > 0;
                         const pct   = Math.round(cnt / slotRowCount * 100);
-                        const col   = isDomAtSlot ? getOutcomeColor(sc) : '#9e9e9e';
-                        const wt    = isDomAtSlot ? 700 : 400;
-                        const star  = isDomForScore ? `<span style="color:#f9a825;font-size:10px;" title="Peak slot for ${sc}">★</span>` : '';
-                        return `<span style="color:${col};font-weight:${wt};" title="Slot ${si+1}: ${cnt}/${slotRowCount} (${pct}%)${isDomForScore?' ★ Peak slot for this score':''}">${star}${ordSg(si+1)}:<strong>${cnt}</strong><span style="font-size:9px;color:${isDomAtSlot?col:'#bdbdbd'};">(${pct}%)</span></span>`;
+                        const col   = isGlobalPeak ? '#e53935' : (isDomAtSlot ? getOutcomeColor(sc) : '#9e9e9e');
+                        const wt    = isDomAtSlot || isGlobalPeak ? 700 : 400;
+                        const badge = isGlobalPeak ? `<span style="color:#e53935;font-size:10px;" title="Highest slot across ALL scores">🏆</span>` : (isDomForScore ? `<span style="color:#f9a825;font-size:10px;" title="Peak slot for ${sc}">★</span>` : '');
+                        const tipExtra = isGlobalPeak ? ' 🏆 Highest slot across ALL scores' : (isDomForScore ? ' ★ Peak slot for this score' : '');
+                        const str = `<span style="color:${col};font-weight:${wt};" title="Slot ${si+1}: ${cnt}/${slotRowCount} (${pct}%)${tipExtra}">${badge}${ordSg(si+1)}:<strong>${cnt}</strong><span style="font-size:9px;color:${isGlobalPeak?'#e53935':(isDomAtSlot?col:'#bdbdbd')};">(${pct}%)</span></span>`;
+                        return { si, cnt, str };
                     }).filter(Boolean);
+                    if(slotPatternSortDir === 'desc') partsData.sort((a,b)=> b.cnt - a.cnt || a.si - b.si);
+                    else if(slotPatternSortDir === 'asc') partsData.sort((a,b)=> a.cnt - b.cnt || a.si - b.si);
+                    const parts = partsData.map(p => p.str);
                     html += `<td style="font-style:italic;font-size:10px;white-space:nowrap;padding:3px 5px;line-height:1.8;">${parts.join('<br>')}</td>`;
                 });
                 html += `<td style="color:#9e9e9e;font-size:10px;">—</td></tr>`;
