@@ -3665,6 +3665,7 @@ Example:
                 document.getElementById('chartContainer').style.display='none';
                 document.getElementById('tableWrapper').innerHTML='<div class="table-container" id="tableContainer"><div class="empty-state">Enter match results above to generate pivot table</div></div>';
             }
+            if(typeof slotsOverviewVisible!=='undefined' && slotsOverviewVisible) renderSlotsOverview();
         }
 
         // ── Max score option count — regenerates the number options (0..N) in the
@@ -6358,6 +6359,7 @@ Example:
             updateSegmentFilter();
             updateDisplay();
             if(matches.length > 0) generatePivot();
+            if(typeof slotsOverviewVisible!=='undefined' && slotsOverviewVisible) renderSlotsOverview();
         }
 
         function onPivotRowChange(){
