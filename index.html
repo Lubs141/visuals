@@ -3824,7 +3824,7 @@ Example:
                         const col = isGlobalPeak ? '#e53935' : (isPeakForOutcome ? '#f9a825' : (isDominant ? '#6a1b9a' : '#9e9e9e'));
                         const weight = isDominant || isPeakForOutcome || isGlobalPeak ? 700 : 400;
                         const badge = isGlobalPeak ? `<span style="color:#e53935;font-size:8px;" title="Highest slot across ALL ${def.shortLabel} outcomes">🏆</span>` : (isPeakForOutcome ? `<span style="color:#f9a825;font-size:8px;" title="Peak slot for ${c}">★</span>` : '');
-                        const str = `<span style="color:${col};font-weight:${weight};" title="${ordinal(slotIdx+1)} slot: ${cnt}/${slotRowCount} (${pct}%)">`+
+                        const str = `<span style="color:${col};font-weight:${weight};touch-action:manipulation;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;" title="${ordinal(slotIdx+1)} slot: ${cnt}/${slotRowCount} (${pct}%) — double-tap for last 10" ondblclick="showSlotDotsHistory(event, '${type}', ${slotIdx})">`+
                                `${badge}${ordinal(slotIdx+1)}:<strong>${cnt}</strong>`+
                                `<span style="font-size:8px;color:${isGlobalPeak?'#e53935':(isPeakForOutcome?'#f9a825':(isDominant?'#6a1b9a':'#bdbdbd'))};"> (${pct}%)</span></span>`;
                         return { slotIdx, cnt, str };
@@ -3840,11 +3840,58 @@ Example:
 
                 const spanStyle = SLOTS_OVERVIEW_FULLWIDTH.includes(def.key) ? 'grid-column:1 / -1;' : '';
                 return `<div style="${spanStyle}border:1px solid #444;border-radius:6px;padding:8px 6px;background:rgba(255,255,255,0.03);">`+
-                       `<div style="font-size:12px;font-weight:700;color:var(--text-primary,#fff);margin-bottom:6px;border-bottom:1px solid #444;padding-bottom:4px;text-align:center;">${def.label}</div>`+
+                       `<div style="font-size:12px;font-weight:700;color:var(--text-primary,#fff);margin-bottom:4px;border-bottom:1px solid #444;padding-bottom:4px;text-align:center;">${def.label}</div>`+
+                       `<div id="slotDots_${type}" style="display:none;text-align:center;margin-bottom:6px;"></div>`+
                        `<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;">${valueBlocks}</div>`+
                        `</div>`;
             }).join('');
             _activeScoreFilter = _savedScoreFilter;
+
+            // Re-apply (and refresh with latest data) any dots panels that were left open
+            Object.keys(_slotsOverviewOpenSlot).forEach(type => {
+                renderSlotDotsFor(type, _slotsOverviewOpenSlot[type]);
+            });
+        }
+        const _slotsOverviewOpenSlot = {};
+        function renderSlotDotsFor(type, slotIdx){
+            const dotsRow = document.getElementById('slotDots_' + type);
+            if(!dotsRow) return;
+            const N = SLOTS_PER_HOUR;
+            const totalHours = Math.floor(matches.length / N);
+            if(totalHours === 0){ dotsRow.style.display = 'none'; dotsRow.innerHTML=''; return; }
+            const startHour = Math.max(0, totalHours - 10);
+            const recent = [];
+            for(let h = startHour; h < totalHours; h++){
+                const idx = h*N + slotIdx;
+                if(idx < matches.length) recent.push(matches[idx]);
+            }
+            if(recent.length === 0){ dotsRow.style.display = 'none'; dotsRow.innerHTML=''; return; }
+            const ordinal = n => n===1?'1st':n===2?'2nd':n===3?'3rd':`${n}th`;
+            const dotsHtml = recent.map(m => {
+                const val = getOutcomeValue(m, type);
+                const col = getOutcomeColor(val);
+                return `<span title="${val}" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${col};margin:0 2px;vertical-align:middle;"></span>`;
+            }).join('');
+            dotsRow.innerHTML = `<div style="font-size:8px;color:#9e9e9e;margin-bottom:2px;">Last ${recent.length} @ ${ordinal(slotIdx+1)} slot</div>`+
+                                 `<div>${dotsHtml}</div>`;
+            dotsRow.style.display = 'block';
+        }
+        function showSlotDotsHistory(evt, type, slotIdx){
+            if(evt){ evt.preventDefault(); evt.stopPropagation(); }
+            if(window.getSelection){ const sel = window.getSelection(); if(sel && sel.removeAllRanges) sel.removeAllRanges(); }
+            const dotsRow = document.getElementById('slotDots_' + type);
+            if(!dotsRow) return;
+
+            // Double-tapping the currently-open slot again closes it
+            if(_slotsOverviewOpenSlot[type] === slotIdx){
+                dotsRow.style.display = 'none';
+                dotsRow.innerHTML = '';
+                delete _slotsOverviewOpenSlot[type];
+                return;
+            }
+
+            _slotsOverviewOpenSlot[type] = slotIdx;
+            renderSlotDotsFor(type, slotIdx);
         }
         function updateMatchPositionDisplay() {
             const nextHour=Math.floor(matches.length / SLOTS_PER_HOUR)+1; const nextPosition=(matches.length % SLOTS_PER_HOUR)+1;
@@ -5680,6 +5727,7 @@ Example:
             applyPivotToggleUI();
             updateDisplay(); updateMatchList(); updateMatchPositionDisplay(); updateColorPicker(); updateTargetOutcomes();
             if(matches.length>0 && autoUpdate) generatePivot();
+            updateSlotsOverviewVisibility();
             const speedControl=document.getElementById('animationSpeed');
             if(speedControl){ speedControl.onchange=function(){ animationSpeed=parseInt(this.value); if(isAnimating){ stopAnimation(); setTimeout(()=>startAnimation(),100); } }; }
             window.addEventListener('beforeunload',saveData);
