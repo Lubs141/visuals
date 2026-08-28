@@ -2519,6 +2519,43 @@ Example:
             const title = slotPatternSortDir === 'desc' ? 'Sorted by % descending — click for ascending' : (slotPatternSortDir === 'asc' ? 'Sorted by % ascending — click to reset' : 'Click to sort slots by percentage');
             return `<button onclick="cycleSlotPatternSort()" title="${title}" style="font-size:9px;padding:1px 5px;margin-left:4px;border-radius:3px;border:1px solid #666;background:#333;color:#ddd;cursor:pointer;vertical-align:middle;">${label}</button>`;
         }
+        // ── Dedicated sort controls for the Slots Overview cards (independent of the
+        //    pivot table's slotPatternSortDir toggle above) — a metric to sort by,
+        //    plus a direction that applies to whichever metric is chosen ──────────
+        let slotsOverviewSortMetric = 'default'; // default | count | consistency | recent | deviation
+        let slotsOverviewSortDir = 'desc';        // desc | asc — applies to the chosen metric
+        try { const _sosm = localStorage.getItem('mv_slots_overview_sort_metric'); if(_sosm) slotsOverviewSortMetric = _sosm; } catch(e){}
+        try { const _sosd = localStorage.getItem('mv_slots_overview_sort_dir'); if(_sosd) slotsOverviewSortDir = _sosd; } catch(e){}
+        const SLOTS_OVERVIEW_METRIC_LABELS = {
+            default:     'Slot Order',
+            count:       'Count',
+            consistency: '🎯 Consistency',
+            recent:      '🔥 Last 10',
+            deviation:   '⚡ Deviation',
+            alternation: '🔀 Alternation'
+        };
+        function onSlotsOverviewMetricChange(sel){
+            slotsOverviewSortMetric = sel.value;
+            try { localStorage.setItem('mv_slots_overview_sort_metric', slotsOverviewSortMetric); } catch(e){}
+            renderSlotsOverview();
+        }
+        function toggleSlotsOverviewSortDir(){
+            slotsOverviewSortDir = slotsOverviewSortDir === 'desc' ? 'asc' : 'desc';
+            try { localStorage.setItem('mv_slots_overview_sort_dir', slotsOverviewSortDir); } catch(e){}
+            renderSlotsOverview();
+        }
+        function slotsOverviewSortControlHtml(){
+            const opts = Object.keys(SLOTS_OVERVIEW_METRIC_LABELS).map(k =>
+                `<option value="${k}" ${slotsOverviewSortMetric===k?'selected':''}>${SLOTS_OVERVIEW_METRIC_LABELS[k]}</option>`
+            ).join('');
+            const metricSelect = `<select onchange="onSlotsOverviewMetricChange(this)" title="Sort the slots within each card by this metric" `+
+                   `style="font-size:9px;padding:1px 4px;margin-left:4px;border-radius:3px;border:1px solid #666;background:#333;color:#ddd;cursor:pointer;vertical-align:middle;">${opts}</select>`;
+            const dirDisabled = slotsOverviewSortMetric === 'default';
+            const dirLabel = slotsOverviewSortDir === 'desc' ? '▼ High→Low' : '▲ Low→High';
+            const dirBtn = `<button onclick="toggleSlotsOverviewSortDir()" ${dirDisabled?'disabled':''} title="${dirDisabled?'Pick a metric first':'Toggle sort direction'}" `+
+                   `style="font-size:9px;padding:1px 5px;margin-left:4px;border-radius:3px;border:1px solid #666;background:${dirDisabled?'#222':'#333'};color:${dirDisabled?'#666':'#ddd'};cursor:${dirDisabled?'default':'pointer'};vertical-align:middle;">${dirLabel}</button>`;
+            return metricSelect + dirBtn;
+        }
         // Controls whether the "storage full" / "history trimmed" popup notifications
         // are actually displayed. The underlying save + auto-trim logic in saveData()
         // always runs regardless of this setting — this only mutes the visible alert.
@@ -3775,7 +3812,7 @@ Example:
             const grid = document.getElementById('slotsOverviewGrid');
             const sortWrap = document.getElementById('slotsOverviewSortWrap');
             if(!grid) return;
-            if(sortWrap) sortWrap.innerHTML = slotSortBtnHtml();
+            if(sortWrap) sortWrap.innerHTML = slotsOverviewSortControlHtml();
 
             const N = SLOTS_PER_HOUR;
             const totalHours = Math.floor(matches.length / N);
@@ -3804,17 +3841,48 @@ Example:
                 const colNames = Array.from(colSet).sort();
 
                 const slotCountsArr = Array.from({length: N}, () => { const o={}; colNames.forEach(c=>o[c]=0); return o; });
+                const perSlotHistory = Array.from({length: N}, () => []); // chronological outcome values per slot position
                 for(let h = 0; h < totalHours; h++){
                     for(let slot = 0; slot < N; slot++){
                         const idx = h*N + slot;
                         const outcome = getOutcomeValue(matches[idx], type);
                         if(slotCountsArr[slot][outcome] !== undefined) slotCountsArr[slot][outcome]++;
+                        perSlotHistory[slot].push(outcome);
                     }
                 }
                 const globalMaxCnt = Math.max(...colNames.flatMap(c => slotCountsArr.map(so => so[c]||0)));
 
+                const outcomeTotals = {};
+                colNames.forEach(c => { outcomeTotals[c] = slotCountsArr.reduce((s, so) => s + (so[c]||0), 0); });
+                const maxOutcomeTotal = Math.max(...Object.values(outcomeTotals));
+
+                // For binary outcomes (exactly 2 values, e.g. Yes/No), the two columns'
+                // percentages should always mirror each other exactly (Yes 80% ⇄ No 20%),
+                // so a slot topping one column's ranking lands at the bottom of the other's.
+                // Rounding each column's percentage independently can occasionally break
+                // that by 1%, so for the partition-style metrics (Count, Last 10) we compute
+                // the primary column normally and force the secondary column to its exact
+                // complement rather than re-rounding its own count independently.
+                const _isBinary = colNames.length === 2;
+                const _partitionMetric = slotsOverviewSortMetric === 'default' || slotsOverviewSortMetric === 'count' || slotsOverviewSortMetric === 'recent';
+                let _primaryDisplayPctBySlot = null;
+                if(_isBinary && _partitionMetric){
+                    const primaryC = colNames[0];
+                    _primaryDisplayPctBySlot = slotCountsArr.map((slotObj, slotIdx) => {
+                        if(slotsOverviewSortMetric === 'recent'){
+                            const recentSlice = perSlotHistory[slotIdx].slice(-10);
+                            const recentCount = recentSlice.filter(v => v === primaryC).length;
+                            return recentSlice.length ? Math.round(recentCount / recentSlice.length * 100) : 0;
+                        }
+                        const cnt = slotObj[primaryC] || 0;
+                        return Math.round(cnt / slotRowCount * 100);
+                    });
+                }
+
                 const valueBlocks = colNames.map(c => {
                     const maxForOutcome = Math.max(...slotCountsArr.map(so => so[c]||0));
+                    const total = outcomeTotals[c];
+                    const isLeadingOutcome = colNames.length > 1 && total === maxOutcomeTotal && maxOutcomeTotal > 0;
                     let partsData = slotCountsArr.map((slotObj, slotIdx) => {
                         const cnt = slotObj[c] || 0;
                         const pct = Math.round(cnt / slotRowCount * 100);
@@ -3825,16 +3893,86 @@ Example:
                         const col = isGlobalPeak ? '#e53935' : (isPeakForOutcome ? '#f9a825' : (isDominant ? '#6a1b9a' : '#9e9e9e'));
                         const weight = isDominant || isPeakForOutcome || isGlobalPeak ? 700 : 400;
                         const badge = isGlobalPeak ? `<span style="color:#e53935;font-size:8px;" title="Highest slot across ALL ${def.shortLabel} outcomes">🏆</span>` : (isPeakForOutcome ? `<span style="color:#f9a825;font-size:8px;" title="Peak slot for ${c}">★</span>` : '');
-                        const str = `<span style="color:${col};font-weight:${weight};touch-action:manipulation;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;" title="${ordinal(slotIdx+1)} slot: ${cnt}/${slotRowCount} (${pct}%) — double-tap for last 10" ondblclick="showSlotDotsHistory(event, '${type}', ${slotIdx})">`+
+
+                        // Metrics for the extra sort modes
+                        const hist = perSlotHistory[slotIdx];
+                        const recentSlice = hist.slice(-10);
+                        const recentCount = recentSlice.filter(v => v === c).length;
+                        // Consistency = current streak of consecutive most-recent hours at this
+                        // slot landing on THIS specific outcome value c (per-column, not shared
+                        // across Yes/No — a slot can be "consistent at Yes" while inconsistent at No)
+                        let consistencyScore = 0;
+                        for(let i = hist.length - 1; i >= 0; i--){
+                            if(hist[i] === c) consistencyScore++;
+                            else break;
+                        }
+                        const expectedPct = 100 / colNames.length;
+                        const deviation = Math.round(Math.abs(pct - expectedPct));
+                        // Alternation, per column c: of all the times this slot has actually
+                        // landed on c, what % of those were a FRESH SWITCH into c (the previous
+                        // hour was something else) rather than a continuation of an existing
+                        // run of c. This is anchored to c's own occurrences, so it genuinely
+                        // differs between Yes and No (and between Home/Draw/Away) — a slot can
+                        // be "Yes arrives sporadically" while "No tends to cluster together".
+                        let alternationScore = null;
+                        if(cnt > 0){
+                            let freshEntries = 0;
+                            for(let i = 1; i < hist.length; i++){
+                                if(hist[i] === c && hist[i-1] !== c) freshEntries++;
+                            }
+                            // First-ever occurrence of c has no prior hour to compare against —
+                            // count it as a fresh entry too since it can't be a continuation.
+                            if(hist.length && hist[0] === c) freshEntries++;
+                            alternationScore = Math.round(freshEntries / cnt * 100);
+                        }
+
+                        // Percentage actually shown next to the slot — corresponds to
+                        // whichever metric is currently selected in the sort dropdown.
+                        let displayPct, displayLabel;
+                        const _isSecondaryBinaryCol = _isBinary && _partitionMetric && c !== colNames[0];
+                        if(_isSecondaryBinaryCol){
+                            displayPct = 100 - _primaryDisplayPctBySlot[slotIdx];
+                            displayLabel = slotsOverviewSortMetric === 'recent' ? `last10 (mirrors "${colNames[0]}")` : `${displayPct}% (mirrors "${colNames[0]}")`;
+                        } else if(slotsOverviewSortMetric === 'consistency'){
+                            displayPct = Math.round(consistencyScore / slotRowCount * 100);
+                            displayLabel = `streak: ${consistencyScore}/${slotRowCount}`;
+                        } else if(slotsOverviewSortMetric === 'recent'){
+                            displayPct = Math.round(recentCount / recentSlice.length * 100);
+                            displayLabel = `last10: ${recentCount}/${recentSlice.length}`;
+                        } else if(slotsOverviewSortMetric === 'deviation'){
+                            displayPct = deviation;
+                            displayLabel = `${pct>=expectedPct?'+':'-'}${deviation} vs avg`;
+                        } else if(slotsOverviewSortMetric === 'alternation'){
+                            displayPct = alternationScore!==null ? alternationScore : pct;
+                            displayLabel = alternationScore!==null ? `fresh entries: ${alternationScore}% of "${c}"` : `${pct}%`;
+                        } else {
+                            displayPct = pct;
+                            displayLabel = `${pct}%`;
+                        }
+
+                        const metricsTitle = ` — Last ${recentSlice.length}: ${recentCount}/${recentSlice.length}`+
+                            `, Current streak on "${c}": ${consistencyScore} in a row`+
+                            `, Deviation from avg: ${pct>=expectedPct?'+':'-'}${deviation}%`+
+                            (alternationScore!==null ? `, "${c}" arrives fresh (vs. continues a run) ${alternationScore}% of the time` : '');
+
+                        const str = `<span style="color:${col};font-weight:${weight};touch-action:manipulation;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;" title="${ordinal(slotIdx+1)} slot: ${cnt}/${slotRowCount} (${pct}%)${metricsTitle} — double-tap for last 10" ondblclick="showSlotDotsHistory(event, '${type}', ${slotIdx})">`+
                                `${badge}${ordinal(slotIdx+1)}:<strong>${cnt}</strong>`+
-                               `<span style="font-size:8px;color:${isGlobalPeak?'#e53935':(isPeakForOutcome?'#f9a825':(isDominant?'#6a1b9a':'#bdbdbd'))};"> (${pct}%)</span></span>`;
-                        return { slotIdx, cnt, str };
+                               `<span style="font-size:8px;color:${isGlobalPeak?'#e53935':(isPeakForOutcome?'#f9a825':(isDominant?'#6a1b9a':'#bdbdbd'))};" title="${displayLabel}"> (${displayPct}%)</span></span>`;
+                        return { slotIdx, cnt, consistencyScore, recentCount, deviation, alternationScore, str };
                     });
-                    if(slotPatternSortDir === 'desc') partsData.sort((a,b)=> b.cnt - a.cnt || a.slotIdx - b.slotIdx);
-                    else if(slotPatternSortDir === 'asc') partsData.sort((a,b)=> a.cnt - b.cnt || a.slotIdx - b.slotIdx);
+                    if(slotsOverviewSortMetric !== 'default'){
+                        const acc = { count:'cnt', consistency:'consistencyScore', recent:'recentCount', deviation:'deviation', alternation:'alternationScore' }[slotsOverviewSortMetric];
+                        const dir = slotsOverviewSortDir === 'asc' ? 1 : -1;
+                        partsData.sort((a,b) => {
+                            const av = a[acc] ?? -Infinity, bv = b[acc] ?? -Infinity;
+                            return dir === 1 ? (av - bv || a.slotIdx - b.slotIdx) : (bv - av || a.slotIdx - b.slotIdx);
+                        });
+                    }
                     const swatch = getOutcomeColor(c);
                     return `<div style="flex:0 0 auto;text-align:center;">`+
-                           `<div style="font-size:10px;font-weight:700;color:${swatch};margin-bottom:2px;white-space:nowrap;">${c}</div>`+
+                           `<div style="font-size:10px;font-weight:${isLeadingOutcome?800:600};color:${swatch};opacity:${isLeadingOutcome?1:0.55};margin-bottom:2px;white-space:nowrap;">`+
+                               `${isLeadingOutcome?'<span style="color:#43a047;">▲</span> ':''}${c}<span style="font-size:9px;">(${total})</span>`+
+                           `</div>`+
                            `<div style="font-size:9px;line-height:1.7;white-space:nowrap;">${partsData.map(p=>p.str).join('<br>')}</div>`+
                            `</div>`;
                 }).join('');
