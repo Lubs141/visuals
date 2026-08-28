@@ -3702,7 +3702,7 @@ Example:
                 document.getElementById('chartContainer').style.display='none';
                 document.getElementById('tableWrapper').innerHTML='<div class="table-container" id="tableContainer"><div class="empty-state">Enter match results above to generate pivot table</div></div>';
             }
-            if(typeof slotsOverviewVisible!=='undefined' && slotsOverviewVisible) renderSlotsOverview();
+            if(typeof slotsOverviewVisible!=='undefined' && slotsOverviewVisible) updateSlotsOverviewVisibility();
         }
 
         // ── Max score option count — regenerates the number options (0..N) in the
