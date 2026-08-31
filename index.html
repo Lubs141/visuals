@@ -1941,10 +1941,7 @@
     <option value="11">Position 11</option>
     <option value="12">Position 12</option>
   </select>
-  <select id="posSegSize" onchange="generatePivot()" style="display:none;" title="Segment size for position view">
-    <option value="2">Seg: 2 hrs</option>
-    <option value="3" selected>Seg: 3 hrs</option>
-  </select>
+  <input type="number" id="posSegSize" onchange="generatePivot()" min="1" max="50" step="1" value="3" style="display:none;width:52px;" title="Matches per position segment — how many consecutive occurrences of this position group into one row">
   <select id="pivotColumn" onchange="onOutcomeTypeChange(this,'scoresSubDiv_pivot',function(){generatePivot();updateMatchList();updateDisplay();});">
     <option value="winner">Match Winner</option>
     <option value="goals">Goals O/U 2.5</option>
@@ -2110,10 +2107,7 @@
     <option value="11">Position 11</option><option value="12">Position 12</option>
   </select>
   <!-- Backing seg size for compare right pane -->
-  <select id="comparePosSegSizeRight" onchange="generatePivot()" style="display:none;">
-    <option value="2">2</option>
-    <option value="3" selected>3</option>
-  </select>
+  <input type="number" id="comparePosSegSizeRight" onchange="generatePivot()" min="1" max="50" step="1" value="3" style="display:none;width:52px;" title="Matches per position segment for the right pane">
 </div>
 <div id="scoresSubDiv_pivot" style="display:none; background:#f0f4ff; border:1px solid #c5cae9; border-radius:4px; padding:8px 12px; margin:6px 0;">
   <span style="font-size:12px;font-weight:600;color:#3949ab;">Select Score: </span>
@@ -6542,7 +6536,9 @@ Example:
             if(rowType === 'position' && selectedPos !== null){
                 // Read segment size from the dropdown (2 or 3 hours per segment)
                 const _segSzId = segSizeId || 'posSegSize';
-                const segSz = parseInt(document.getElementById(_segSzId)?.value || '3');
+                let segSz = parseInt(document.getElementById(_segSzId)?.value || '3');
+                if(isNaN(segSz) || segSz < 1) segSz = 1;
+                if(segSz > 50) segSz = 50;
                 // Collect all occurrences of selectedPos across all hours
                 matches.forEach((m,i)=>{
                     const pos=(i % _SPH)+1, hour=Math.floor(i / _SPH)+1;
