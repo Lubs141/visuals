@@ -473,6 +473,41 @@
       letter-spacing: 0.4px;
       background: rgba(0,0,0,0.3);
     }
+    /* ── Match/Position Overview grid (view all Position charts or all Outcome charts side by side) ── */
+    #matchPositionOverviewSection {
+      display: none;
+      background: var(--card-bg,#1e1e1e);
+      border-radius: 8px;
+      padding: 10px;
+      width: 100%;
+      box-sizing: border-box;
+      margin: 0 0 14px 0;
+    }
+    .mp-overview-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .mp-overview-cell {
+      background: #1e1e1e;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.08);
+      overflow: hidden;
+    }
+    .mp-overview-cell canvas {
+      width: 100% !important;
+      height: 175px !important;
+      display: block;
+    }
+    .mp-overview-title {
+      font-size: 10px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.8);
+      padding: 5px 8px 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      background: rgba(0,0,0,0.3);
+    }
     #sixTablePane {
       background: var(--bg-card);
       display: none;
@@ -2062,6 +2097,55 @@
   <button id="drToggleBtn" onclick="toggleDecisionPanel()" style="background:#1a3a5c;color:white;border:none;padding:6px 12px;border-radius:4px;font-size:13px;font-weight:500;cursor:pointer;">🔍 Decision: OFF</button>
   <button id="compareViewBtn" onclick="toggleCompareView()" style="background:#7b1fa2;color:white;border:none;padding:6px 12px;border-radius:4px;font-size:13px;font-weight:500;cursor:pointer;">⚡ Compare: OFF</button>
   <button id="slotsOverviewBtn" onclick="toggleSlotsOverview()" style="background:#00695c;color:white;border:none;padding:6px 12px;border-radius:4px;font-size:13px;font-weight:500;cursor:pointer;" title="Show every outcome's slot pattern side by side">🎰 Slots: OFF</button>
+  <button id="mpOverviewBtn" onclick="toggleMatchPositionOverview()" style="background:#37474f;color:white;border:none;padding:6px 12px;border-radius:4px;font-size:13px;font-weight:500;cursor:pointer;" title="View all Position charts (for one Outcome) or all Outcome charts (for one Position), side by side">🧩 Position/Outcome View: OFF</button>
+  <span id="mpOverviewControls" style="display:none;align-items:center;gap:6px;">
+    <select id="mpViewMode" onchange="onMpViewModeChange()" title="Choose whether to view all Position charts or all Outcome charts">
+      <option value="position">View: Position</option>
+      <option value="outcome">View: Outcome</option>
+    </select>
+    <span id="mpOutcomeSelectWrap">
+      <select id="mpOutcomeSelect" onchange="renderMatchPositionOverview()" title="Outcome reflected in every Position chart">
+        <option value="winner">Match Winner</option>
+        <option value="goals15">Goals O/U 1.5</option>
+        <option value="goals">Goals O/U 2.5</option>
+        <option value="goals35">Goals O/U 3.5</option>
+        <option value="bts">Both Teams Scored</option>
+        <option value="either25">Either Team 2.5+</option>
+        <option value="scores">Scores</option>
+      </select>
+    </span>
+    <span id="mpPositionSelectWrap" style="display:none;">
+      <select id="mpPositionSelect" onchange="renderMatchPositionOverview()" title="Position reflected in every Outcome chart">
+        <option value="1">Position 1</option>
+        <option value="2">Position 2</option>
+        <option value="3">Position 3</option>
+        <option value="4">Position 4</option>
+        <option value="5">Position 5</option>
+        <option value="6">Position 6</option>
+        <option value="7">Position 7</option>
+        <option value="8">Position 8</option>
+        <option value="9">Position 9</option>
+        <option value="10">Position 10</option>
+        <option value="11">Position 11</option>
+        <option value="12">Position 12</option>
+      </select>
+    </span>
+  </span>
+  <!-- Hidden backing select used to feed buildPivotData one position at a time when rendering the Position-view grid -->
+  <select id="mpTempPosSelect" style="display:none;">
+    <option value="1">Position 1</option>
+    <option value="2">Position 2</option>
+    <option value="3">Position 3</option>
+    <option value="4">Position 4</option>
+    <option value="5">Position 5</option>
+    <option value="6">Position 6</option>
+    <option value="7">Position 7</option>
+    <option value="8">Position 8</option>
+    <option value="9">Position 9</option>
+    <option value="10">Position 10</option>
+    <option value="11">Position 11</option>
+    <option value="12">Position 12</option>
+  </select>
   <!-- Compare-mode position selector (shown inside compare header, but driven from here) -->
   <select id="comparePosSelect" onchange="generatePivot()" style="display:none;">
     <option value="all">All Positions</option>
@@ -2239,6 +2323,16 @@
     <div id="slotsOverviewSortWrap"></div>
   </div>
   <div id="slotsOverviewGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;"></div>
+</div>
+
+<!-- ── Match/Position Overview: view all Position charts (one Outcome) or all Outcome charts (one Position) side by side ── -->
+<div id="matchPositionOverviewSection">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+    <div style="font-size:15px;font-weight:700;color:var(--text-primary,#fff);" id="mpOverviewTitle">🧩 Position/Outcome Overview</div>
+  </div>
+  <div class="mp-overview-grid" id="mpOverviewGrid">
+    <!-- Cells injected by JS -->
+  </div>
 </div>
 
 <!-- ── Split Halves / Quarters View ── -->
@@ -3163,6 +3257,7 @@ Example:
             if (isAnimating && animationMatches.length > 0) { matches = [...animationMatches]; updateDisplay(); updateMatchList(); updateMatchPositionDisplay(); if (autoUpdate) generatePivot(); }
             // Render six-chart view once after animation completes
             if (sixViewEnabled) renderSixCharts();
+            if (mpOverviewEnabled) renderMatchPositionOverview();
             const btn = document.getElementById('animateBtn'); btn.textContent = '▶️ Start Animation'; btn.className = '';
             isAnimating = false;
             document.getElementById('animationSpeed').style.display = 'none';
@@ -3774,8 +3869,9 @@ Example:
         function toggleSlotsOverview(){
             slotsOverviewVisible = !slotsOverviewVisible;
             try { localStorage.setItem('mv_slots_overview_visible', JSON.stringify(slotsOverviewVisible)); } catch(e){}
-            // Mutually exclusive with All Outcomes chart view to avoid overlapping layouts
+            // Mutually exclusive with All Outcomes chart view and Position/Outcome Overview to avoid overlapping layouts
             if(slotsOverviewVisible && sixViewEnabled) toggleSixView();
+            if(slotsOverviewVisible && typeof mpOverviewEnabled !== 'undefined' && mpOverviewEnabled) toggleMatchPositionOverview();
             updateSlotsOverviewVisibility();
         }
         function updateSlotsOverviewVisibility(){
@@ -4455,6 +4551,7 @@ Example:
             if(autoUpdate) generatePivot();
             else {
                 // Even when autoUpdate is OFF, always update charts after paste
+                if(mpOverviewEnabled) renderMatchPositionOverview();
                 if(sixViewEnabled) renderSixCharts();
                 else {
                     const _rt = document.getElementById('pivotRow').value;
@@ -4722,8 +4819,9 @@ Example:
 
         function toggleSixView() {
             sixViewEnabled = !sixViewEnabled;
-            // Mutually exclusive with Slots Overview to avoid overlapping layouts
+            // Mutually exclusive with Slots Overview and Position/Outcome Overview to avoid overlapping layouts
             if(sixViewEnabled && slotsOverviewVisible){ slotsOverviewVisible = false; try{ localStorage.setItem('mv_slots_overview_visible','false'); }catch(e){} updateSlotsOverviewVisibility(); }
+            if(sixViewEnabled && typeof mpOverviewEnabled !== 'undefined' && mpOverviewEnabled) toggleMatchPositionOverview();
             const btn = document.getElementById('sixViewBtn');
             btn.textContent = sixViewEnabled ? '📊 All Outcomes: ON' : '📊 All Outcomes: OFF';
             btn.style.background = sixViewEnabled ? '#1565c0' : '#37474f';
@@ -4950,6 +5048,192 @@ Example:
             if (previousActive) {
                 sixActiveOutcome = previousActive;
             }
+        }
+
+        // ── Match/Position Overview: view all Position charts (reflecting one Outcome) OR all Outcome
+        //    charts (reflecting one Position) side by side. Independent of the main pivot table/chart. ──
+        let mpOverviewEnabled = false;
+        let mpCharts = {};
+
+        function toggleMatchPositionOverview() {
+            mpOverviewEnabled = !mpOverviewEnabled;
+            // Mutually exclusive with All Outcomes and Slots Overview to avoid overlapping layouts
+            if (mpOverviewEnabled) {
+                if (sixViewEnabled) toggleSixView();
+                if (slotsOverviewVisible) { slotsOverviewVisible = false; try{ localStorage.setItem('mv_slots_overview_visible','false'); }catch(e){} updateSlotsOverviewVisibility(); }
+            }
+            const btn = document.getElementById('mpOverviewBtn');
+            btn.textContent = mpOverviewEnabled ? '🧩 Position/Outcome View: ON' : '🧩 Position/Outcome View: OFF';
+            btn.style.background = mpOverviewEnabled ? '#6a1b9a' : '#37474f';
+
+            const controls = document.getElementById('mpOverviewControls');
+            const section   = document.getElementById('matchPositionOverviewSection');
+            const chartCont = document.getElementById('chartContainer');
+            const tableWrap = document.getElementById('tableWrapper');
+
+            if (mpOverviewEnabled) {
+                if (controls) controls.style.display = 'inline-flex';
+                chartCont.classList.add('six-view-hidden');
+                chartCont.style.display = 'none';
+                tableWrap.style.display = 'none';
+                if (matches.length > 0) { section.style.display = 'block'; renderMatchPositionOverview(); }
+                else section.style.display = 'none';
+            } else {
+                if (controls) controls.style.display = 'none';
+                section.style.display = 'none';
+                destroyMpCharts();
+                chartCont.classList.remove('six-view-hidden');
+                tableWrap.style.display = 'block';
+                if (matches.length > 0) generatePivot();
+            }
+            saveData();
+        }
+
+        function destroyMpCharts() {
+            Object.values(mpCharts).forEach(c => { try { c.destroy(); } catch(e){} });
+            mpCharts = {};
+        }
+
+        function onMpViewModeChange() {
+            const mode = document.getElementById('mpViewMode').value;
+            document.getElementById('mpOutcomeSelectWrap').style.display  = mode === 'position' ? 'inline-block' : 'none';
+            document.getElementById('mpPositionSelectWrap').style.display = mode === 'outcome'  ? 'inline-block' : 'none';
+            renderMatchPositionOverview();
+        }
+
+        function renderMatchPositionOverview() {
+            if (!mpOverviewEnabled || matches.length === 0) return;
+            const grid  = document.getElementById('mpOverviewGrid');
+            const title = document.getElementById('mpOverviewTitle');
+            if (!grid) return;
+
+            const mode = document.getElementById('mpViewMode')?.value || 'position';
+            const N = SLOTS_PER_HOUR;
+
+            // Neutralize the global score-filter so a Scores chart always shows the full breakdown
+            const _savedScoreFilter = _activeScoreFilter;
+            _activeScoreFilter = null;
+            destroyMpCharts();
+
+            if (mode === 'position') {
+                // One mini chart per POSITION — each is exactly what the main chart container
+                // would show if you picked that position in the Position dropdown, for the
+                // chosen Outcome.
+                const outcomeKey = document.getElementById('mpOutcomeSelect')?.value || 'winner';
+                const def = SIX_OUTCOME_DEFS.find(d => d.key === outcomeKey);
+                if (title) title.textContent = `📍 All Positions — ${def ? def.label : outcomeKey}`;
+                grid.innerHTML = Array.from({length:N}, (_,i)=>i+1).map(pos => `
+                    <div class="mp-overview-cell">
+                      <div class="mp-overview-title">Position ${pos}</div>
+                      <canvas id="mpCanvas_pos_${pos}"></canvas>
+                    </div>
+                `).join('');
+                const tempSel = document.getElementById('mpTempPosSelect');
+                for (let pos = 1; pos <= N; pos++) {
+                    if (tempSel) tempSel.value = String(pos);
+                    renderMpMiniChart('mpCanvas_pos_' + pos, 'position', outcomeKey, 'mpTempPosSelect');
+                }
+            } else {
+                // One mini chart per OUTCOME TYPE — each is exactly what the main chart
+                // container would show if you picked the chosen Position, for that outcome.
+                const posVal = document.getElementById('mpPositionSelect')?.value || '1';
+                if (title) title.textContent = `🎯 All Outcomes — Position ${posVal}`;
+                grid.innerHTML = SIX_OUTCOME_DEFS.map(def => `
+                    <div class="mp-overview-cell">
+                      <div class="mp-overview-title">${def.label}</div>
+                      <canvas id="mpCanvas_out_${def.key}"></canvas>
+                    </div>
+                `).join('');
+                SIX_OUTCOME_DEFS.forEach(def => {
+                    renderMpMiniChart('mpCanvas_out_' + def.key, 'position', def.key, 'mpPositionSelect');
+                });
+            }
+
+            _activeScoreFilter = _savedScoreFilter;
+        }
+
+        // Builds the same labels/datasets shape the main pivot chart and the "All Outcomes"
+        // grid use, so each mini chart here is a faithful (just smaller) copy of what the
+        // main chart container would render for that same rowType/colType/position.
+        function buildMpChartConfig(rowType, colType, posSelectId) {
+            const chartTypeV = document.getElementById('chartType')?.value || 'bar';
+            const valueType  = document.getElementById('pivotValue')?.value || 'count';
+            const isLine     = chartTypeV === 'line';
+            const isStacked  = chartTypeV === 'stacked';
+
+            const data = buildPivotData(rowType, colType, posSelectId, 'pivotRange', 'posSegSize');
+            if (!data || data.size === 0) return null;
+
+            const cols = new Set();
+            data.forEach(row => row.forEach((v,k) => cols.add(k)));
+            const colNames = Array.from(cols).sort();
+            const labels = Array.from(data.keys()).sort((a,b) => {
+                const na = parseInt(a.replace(/[^0-9]/,'').match(/\d+/)?.[0]||'0');
+                const nb = parseInt(b.replace(/[^0-9]/,'').match(/\d+/)?.[0]||'0');
+                return na - nb;
+            });
+
+            let datasets;
+            if (isLine) {
+                datasets = colNames.map(col => {
+                    let cum = 0;
+                    const pts = labels.map(l => { cum += data.get(l).get(col)||0; return cum; });
+                    return { label: col, data: pts,
+                        borderColor: getOutcomeColor(col),
+                        backgroundColor: getOutcomeColor(col)+'33',
+                        borderWidth: 2, fill: false, tension: 0.3,
+                        pointRadius: 2, pointHoverRadius: 4 };
+                });
+            } else {
+                datasets = colNames.map(col => {
+                    const vals = labels.map(l => {
+                        const cnt = data.get(l).get(col)||0;
+                        if (valueType === 'percentage') {
+                            const rowTotal = colNames.reduce((s,c2)=>s+(data.get(l).get(c2)||0),0);
+                            return rowTotal>0 ? parseFloat((cnt/rowTotal*100).toFixed(1)) : 0;
+                        }
+                        return cnt;
+                    });
+                    return { label: col, data: vals,
+                        backgroundColor: getOutcomeColor(col),
+                        borderColor: getOutcomeColor(col),
+                        borderWidth: isStacked ? 0 : 1, borderRadius: isStacked ? 0 : 2, borderSkipped: false,
+                        stack: isStacked ? 'stack' : undefined };
+                });
+            }
+            return { labels, datasets, isLine, isStacked };
+        }
+
+        function renderMpMiniChart(canvasId, rowType, colType, posSelectId) {
+            const ctx = document.getElementById(canvasId)?.getContext('2d');
+            if (!ctx) return;
+            const cfg = buildMpChartConfig(rowType, colType, posSelectId);
+            if (!cfg) return;
+            try {
+                mpCharts[canvasId] = new Chart(ctx, {
+                    type: cfg.isLine ? 'line' : 'bar',
+                    data: { labels: cfg.labels, datasets: cfg.datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: { duration: 300 },
+                        plugins: {
+                            legend: { position:'top', labels:{ font:{size:9}, color:'#fff', boxWidth:10, padding:6 } },
+                            tooltip: {
+                                backgroundColor: 'rgba(0,0,0,0.8)', titleColor:'#fff', bodyColor:'#fff',
+                                titleFont: { size:10 }, bodyFont: { size:10 }
+                            }
+                        },
+                        scales: {
+                            x: { stacked: cfg.isStacked, ticks: { font:{size:8}, color:'#bbb', maxRotation:0 },
+                                 grid: { color:'rgba(255,255,255,0.07)' } },
+                            y: { stacked: cfg.isStacked, beginAtZero:true,
+                                 ticks: { font:{size:8}, color:'#bbb' },
+                                 grid: { color:'rgba(255,255,255,0.07)' } }
+                        }
+                    }
+                });
+            } catch(e) { console.warn('mp chart error:', canvasId, e); }
         }
 
         function onSixChartClick(outcomeKey) {
@@ -5265,6 +5549,15 @@ Example:
                 if(sixSoloP) sixSoloP.style.display='none';
                 const sixBtn = document.getElementById('sixViewBtn');
                 if(sixBtn){ sixBtn.textContent='📊 All Outcomes: OFF'; sixBtn.style.background='#37474f'; }
+                // Reset Match/Position Overview fully — destroy charts, hide containers, reset button
+                if(typeof destroyMpCharts === 'function') destroyMpCharts();
+                mpOverviewEnabled = false;
+                const mpSection = document.getElementById('matchPositionOverviewSection');
+                if(mpSection){ const mg=document.getElementById('mpOverviewGrid'); if(mg) mg.innerHTML=''; mpSection.style.display='none'; }
+                const mpControls = document.getElementById('mpOverviewControls');
+                if(mpControls) mpControls.style.display='none';
+                const mpBtn = document.getElementById('mpOverviewBtn');
+                if(mpBtn){ mpBtn.textContent='🧩 Position/Outcome View: OFF'; mpBtn.style.background='#37474f'; }
                 // Restore chartContainer to normal (remove hidden class, keep display:none until data added)
                 const cc = document.getElementById('chartContainer');
                 if(cc){ cc.classList.remove('six-view-hidden'); cc.style.display='none'; }
@@ -5984,6 +6277,7 @@ Example:
             if(splitHalvesVisible) renderSplitHalvesView();
             else {
                 // Even when autoUpdate is OFF, always update charts on match entry
+                if(mpOverviewEnabled) renderMatchPositionOverview();
                 if(sixViewEnabled) renderSixCharts();
                 else {
                     // Update main chart directly without rebuilding the full pivot table
@@ -6257,14 +6551,19 @@ Example:
                     if (chart2){ chart2.destroy(); chart2=null; }
                     if (scoreGrid) scoreGrid.style.display = 'none';
                     const hmSelShow = document.getElementById('heatmapHourCount'); if(hmSelShow) hmSelShow.style.display='inline-block';
-                    renderSlotHourHeatmap(colType);
+                    if(mpOverviewEnabled){
+                        document.getElementById('chartContainer').style.display = 'none';
+                        if(heatmapCont) heatmapCont.style.display = 'none';
+                    } else {
+                        renderSlotHourHeatmap(colType);
+                    }
                     // Keep All Outcomes (Six View) panel in sync with heatmap mode
                     if (sixViewEnabled) renderSixCharts();
                     // Score Grid panels (All Score Charts / Table / Summary) are score-specific —
                     // only relevant when the heatmap is actually showing Scores
                     const sgAllPanel0 = document.getElementById('scoreGridAllOutcomesPanel');
                     const sgTblPanel0 = document.getElementById('scoreGridTablePanel');
-                    if(colType === 'scores'){
+                    if(colType === 'scores' && !mpOverviewEnabled){
                         if(sgAllPanel0) sgAllPanel0.style.display='block';
                         if(sgTblPanel0) sgTblPanel0.style.display='block';
                         if (_sgAllOutcomesEnabled) renderScoreGridAllOutcomes();
@@ -6282,15 +6581,24 @@ Example:
                     if (chart2){ chart2.destroy(); chart2=null; }
                     if (heatmapCont) heatmapCont.style.display = 'none';
                     const hmSelHide2 = document.getElementById('heatmapHourCount'); if(hmSelHide2) hmSelHide2.style.display='none';
-                    updateScoreGrid();
-                    // Show the All Outcomes panel toggle below the score grid
-                    const sgAllPanel = document.getElementById('scoreGridAllOutcomesPanel');
-                    if (sgAllPanel) sgAllPanel.style.display = 'block';
-                    const sgTblPanel = document.getElementById('scoreGridTablePanel');
-                    if (sgTblPanel) sgTblPanel.style.display = 'block';
-                    if (_sgAllOutcomesEnabled) renderScoreGridAllOutcomes();
-                    if (_sgTableVisible) renderSgTable();
-                    if (_sgSummaryVisible) renderSgSummary();
+                    if(mpOverviewEnabled){
+                        document.getElementById('chartContainer').style.display = 'none';
+                        if (scoreGrid) scoreGrid.style.display = 'none';
+                        const sgAllPanelMp = document.getElementById('scoreGridAllOutcomesPanel');
+                        const sgTblPanelMp = document.getElementById('scoreGridTablePanel');
+                        if(sgAllPanelMp) sgAllPanelMp.style.display='none';
+                        if(sgTblPanelMp) sgTblPanelMp.style.display='none';
+                    } else {
+                        updateScoreGrid();
+                        // Show the All Outcomes panel toggle below the score grid
+                        const sgAllPanel = document.getElementById('scoreGridAllOutcomesPanel');
+                        if (sgAllPanel) sgAllPanel.style.display = 'block';
+                        const sgTblPanel = document.getElementById('scoreGridTablePanel');
+                        if (sgTblPanel) sgTblPanel.style.display = 'block';
+                        if (_sgAllOutcomesEnabled) renderScoreGridAllOutcomes();
+                        if (_sgTableVisible) renderSgTable();
+                        if (_sgSummaryVisible) renderSgSummary();
+                    }
                 } else {
                     // Normal bar/line chart + pivot table
                     document.getElementById('chartContainer').classList.remove('score-grid-active');
@@ -6303,7 +6611,7 @@ Example:
                     if (sgAllPanel) sgAllPanel.style.display = 'none';
                     const sgTblPanel2 = document.getElementById('scoreGridTablePanel');
                     if (sgTblPanel2) sgTblPanel2.style.display = 'none';
-                    wrapper.style.display = 'block';
+                    wrapper.style.display = (sixViewEnabled || mpOverviewEnabled) ? 'none' : 'block';
                     if(!document.getElementById('tableContainer')){
                         wrapper.innerHTML = '<div class="table-container" id="tableContainer"></div>';
                     }
@@ -6323,6 +6631,7 @@ Example:
                 renderSixCharts();
                 if(sixSoloOutcome) renderSixSoloChart();
             }
+            if(mpOverviewEnabled && !isAnimating) renderMatchPositionOverview();
             saveData();
         }
 
@@ -6474,6 +6783,22 @@ Example:
                 for(let i=1;i<=SLOTS_PER_HOUR;i++) html+=`<option value="${i}">Position ${i}</option>`;
                 el.innerHTML = html;
             });
+            // Update Match/Position Overview's position select (no "All" option — it needs one fixed position)
+            const mpPosSel = document.getElementById('mpPositionSelect');
+            if(mpPosSel){
+                const prevVal = mpPosSel.value;
+                let html = '';
+                for(let i=1;i<=SLOTS_PER_HOUR;i++) html+=`<option value="${i}">Position ${i}</option>`;
+                mpPosSel.innerHTML = html;
+                mpPosSel.value = (prevVal && parseInt(prevVal)<=SLOTS_PER_HOUR) ? prevVal : '1';
+            }
+            const mpTempSel = document.getElementById('mpTempPosSelect');
+            if(mpTempSel){
+                let html = '';
+                for(let i=1;i<=SLOTS_PER_HOUR;i++) html+=`<option value="${i}">Position ${i}</option>`;
+                mpTempSel.innerHTML = html;
+            }
+            if(typeof mpOverviewEnabled !== 'undefined' && mpOverviewEnabled) renderMatchPositionOverview();
             // Update pivotRange labels to reflect new slot count
             const rangeEl = document.getElementById('pivotRange');
             if(rangeEl){
@@ -7602,13 +7927,13 @@ Example:
             // Leaving grid mode — remove the class and restore display
             cont.classList.remove('score-grid-active');
             cont.style.display = 'block'; // .chart-container CSS defaults to none, must explicitly show
-            // When six-view is active, completely eliminate chartContainer from layout
-            if(sixViewEnabled && !isCompare){
+            // When six-view or the Position/Outcome Overview is active, completely eliminate chartContainer from layout
+            if((sixViewEnabled || mpOverviewEnabled) && !isCompare){
                 cont.classList.add('six-view-hidden');
                 cont.style.display = 'none';
                 return;
             }
-            // Ensure class is removed when six-view is OFF
+            // Ensure class is removed when both overview modes are OFF
             cont.classList.remove('six-view-hidden');
 
             if(isCompare){
