@@ -5265,7 +5265,7 @@ Example:
                 tmpEl.style.display = 'none';
                 document.body.appendChild(tmpEl);
             }
-            displayTable(data, rowType, colType, valueType, tmpId);
+            displayTable(data, rowType, colType, valueType, tmpId, 'pivotRange', undefined, posSelectId);
             content.innerHTML = tmpEl.innerHTML;
             tmpEl.innerHTML = '';
 
@@ -7061,11 +7061,14 @@ Example:
                 default:        return true;
             }
         }
-        function displayTable(data,rowType,colType,valueType,containerId,rangeSelectId,slotsOverride){
+        function displayTable(data,rowType,colType,valueType,containerId,rangeSelectId,slotsOverride,posSelectIdOverride){
             const _SPH = slotsOverride || SLOTS_PER_HOUR;
             const container=document.getElementById(containerId||'tableContainer'); const segmentFilter=document.getElementById('segmentFilter').value;
-            // In compare mode, each pane has its own posSelect; otherwise positionSelect
-            const posSelectId = containerId === 'compareRightPane' ? 'compareRightPosSelect'
+            // In compare mode, each pane has its own posSelect; a caller can also pass an explicit
+            // override (e.g. the Position/Outcome Overview table pane, which uses its own hidden selects
+            // rather than the main positionSelect) — otherwise fall back to positionSelect.
+            const posSelectId = posSelectIdOverride ? posSelectIdOverride
+                              : containerId === 'compareRightPane' ? 'compareRightPosSelect'
                               : containerId === 'compareLeftPane'  ? 'comparePosSelect'
                               : 'positionSelect';
             const selectedPos = rowType === 'position' ? (()=>{ const v=document.getElementById(posSelectId)?.value||'all'; return v==='all'?null:parseInt(v); })() : null;
